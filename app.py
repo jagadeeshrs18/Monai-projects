@@ -1,673 +1,836 @@
-# SegResNet Pro - Advanced Brain Tumor Detection App
-# Professional Black Theme with Advanced Features
-# Save as: app.py | Run: streamlit run app.py
+# Advanced Retinal Vessel Segmentation Streamlit App
+# SegResNet Model with Interactive Controls
 
 import streamlit as st
 import torch
+import torch.nn as nn
 import numpy as np
-import nibabel as nib
-import matplotlib.pyplot as plt
+import cv2
 from PIL import Image
+import matplotlib.pyplot as plt
+import seaborn as sns
+from monai.networks.nets import SegResNet
+import json
 import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
-import io
-import cv2
-import tempfile
+from io import BytesIO
+import base64
 import os
-from datetime import datetime
 
-from monai.networks.nets import SegResNet
-from monai.inferers import sliding_window_inference
-
-
-
-# ============================================================
-# PAGE CONFIGURATION
-# ============================================================
+# Page configuration
 st.set_page_config(
-    page_title="SegResNet Pro - Brain Tumor AI",
-    page_icon="🧠",
+    page_title="Retinal Vessel Segmentation",
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ============================================================
-# CUSTOM CSS - BLACK THEME
-# ============================================================
+# Enhanced Custom CSS with modern design
 st.markdown("""
-    <style>
-    /* Main background */
-    .stApp {
-        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    
+    * {
+        font-family: 'Inter', sans-serif;
     }
     
-    /* Header styling */
-    h1 {
-        color: #6fd3ff !important;
-        text-shadow: 0 0 12px rgba(111, 211, 255, 0.6);
-        font-family: 'Courier New', monospace;
+    .main-header {
+        font-size: 3.5rem;
+        font-weight: 800;
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding: 2rem 0;
+        letter-spacing: -1px;
+        animation: gradient 3s ease infinite;
+        background-size: 200% 200%;
     }
-    h2, h3 {
-        color: #6fd3ff !important;
-        font-family: 'Courier New', monospace;
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    
+    .subtitle {
+        text-align: center;
+        font-size: 1.3rem;
+        color: #64748b;
+        margin-top: -1rem;
+        margin-bottom: 2rem;
+        font-weight: 500;
+    }
+    
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 16px;
+        color: white;
+        text-align: center;
+        margin: 0.5rem 0;
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+    }
+    
+    .metric-card h3 {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        opacity: 0.9;
+    }
+    
+    .metric-card h1 {
+        margin: 0.5rem 0 0 0;
+        font-size: 2.5rem;
+        font-weight: 800;
+    }
+    
+    .stButton>button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 1rem;
+        font-size: 1.2rem;
+        font-weight: 700;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+    
+    .info-box {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #667eea;
+        margin: 1rem 0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    
+    .success-box {
+        background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #22c55e;
+        margin: 1rem 0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    
+    .warning-box {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #f59e0b;
+        margin: 1rem 0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin: 0.5rem;
+    }
+    
+    .badge-success {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: white;
+    }
+    
+    .badge-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .section-header {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 3px solid #667eea;
     }
     
     /* Sidebar styling */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
-        border-right: 2px solid #00ff88;
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     }
     
-    [data-testid="stSidebar"] * {
-        color: #c9d1d9 !important;
+    /* Image containers */
+    .image-container {
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
     }
     
-    /* Metric cards */
-    [data-testid="stMetricValue"] {
-        color: #00ff88 !important;
-        font-size: 28px !important;
-        font-weight: bold !important;
+    .image-container:hover {
+        transform: scale(1.02);
     }
     
-    [data-testid="stMetricLabel"] {
-        color: #8b949e !important;
-        font-size: 14px !important;
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
     }
     
-    /* Buttons */
-    .stButton>button {
-        background: linear-gradient(90deg, #6fd3ff 0%, #6fd3ff 100%);
-        color: black;
-        font-weight: bold;
-        border: none;
-        padding: 15px 30px;
-        font-size: 18px;
-        border-radius: 10px;
-        
-        transition: all 0.3s;
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 12px 24px;
+        font-weight: 600;
     }
     
-    .stButton>button:hover {
-        transform: scale(1.05);
-        box-shadow: 0 0 30px rgba(0, 255, 136, 0.8);
+    /* Footer */
+    .footer {
+        text-align: center;
+        color: #64748b;
+        padding: 3rem 0;
+        margin-top: 3rem;
+        border-top: 2px solid #e2e8f0;
     }
     
-    /* File uploader */
-    [data-testid="stFileUploader"] {
-        background: #161b22;
-        border: 2px dashed #6fd3ff;
-        border-radius: 10px;
-        padding: 20px;
+    .footer strong {
+        color: #1e293b;
+        font-size: 1.1rem;
     }
-    
-    /* Success/Error messages */
-    .stSuccess {
-        background: rgba(0, 255, 136, 0.1);
-        border-left: 4px solid #6fd3ff;
-        color: #00ff88;
-    }
-    
-    .stError {
-        background: rgba(255, 59, 48, 0.1);
-        border-left: 4px solid #ff3b30;
-        color: #ff3b30;
-    }
-    
-    /* Info boxes */
-    .stInfo {
-        background: rgba(0, 122, 255, 0.1);
-        border-left: 4px solid #007aff;
-        color: #58a6ff;
-    }
-    
-    /* Divider */
-    hr {
-        border: 1px solid #6fd3ff;
-        margin: 30px 0;
-    }
-    
-    /* Download button */
-    .downloadButton {
-        background: linear-gradient(90deg, #007aff 0%, #0055cc 100%);
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background: #161b22;
-        color: #6fd3ff !important;
-        border: 1px solid #30363d;
-    }
-    
-    /* Text */
-    p, label, span {
-        color: #c9d1d9 !important;
-    }
-    
-    /* Progress bar */
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #6fd3ff 0%, #00cc6a 100%);
-    }
-    </style>
+</style>
 """, unsafe_allow_html=True)
 
-# ============================================================
-# LOAD MODEL
-# ============================================================
+# Initialize session state
+if 'model' not in st.session_state:
+    st.session_state.model = None
+if 'uploaded_image' not in st.session_state:
+    st.session_state.uploaded_image = None
+if 'prediction' not in st.session_state:
+    st.session_state.prediction = None
+if 'model_loaded' not in st.session_state:
+    st.session_state.model_loaded = False
+
+# Model path - Auto-load from this location
+MODEL_PATH = r"E:\monai\retinal-model\best_segresnet_model.pth"
+
+# Model loading function
 @st.cache_resource
-def load_segresnet():
+def load_model(model_path):
+    """Load the trained SegResNet model with proper PyTorch 2.6+ compatibility"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Try to load improved model first, fallback to standard
     try:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        # Add safe globals for numpy types (PyTorch 2.6+ requirement)
+        torch.serialization.add_safe_globals([
+            np.core.multiarray.scalar,
+            np.ndarray,
+            np.dtype,
+        ])
         
-        MODEL_PATH = os.path.join(BASE_DIR, "segresnet_complete.pth")
-        checkpoint = torch.load(MODEL_PATH, map_location=device)
-
-        # Check if it's improved model
-        config = checkpoint.get('model_config', {})
-        init_filters = config.get('init_filters', 32)
-        blocks_down = config.get('blocks_down', [1, 2, 2, 4])
-        blocks_up = config.get('blocks_up', [1, 1, 1])
+        # Load checkpoint with weights_only=True (secure method)
+        checkpoint = torch.load(model_path, map_location=device, weights_only=True)
         
-        model = SegResNet(
-            spatial_dims=3,
-            in_channels=4,
-            out_channels=3,
-            init_filters=init_filters,
-            blocks_down=blocks_down,
-            blocks_up=blocks_up,
-            dropout_prob=config.get('dropout_prob', 0.2),
-        ).to(device)
-        
-        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        best_dice = checkpoint.get('best_dice', 0)
     except Exception as e:
-        st.error("❌ REAL MODEL LOAD ERROR (NOT PATH ISSUE):")
-        st.error(str(e))
-        import traceback
-        st.text(traceback.format_exc())
-        return None, None, None
-
+        # Fallback: try loading without weights_only restriction
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    
+    config = checkpoint['config']
+    
+    # Build model
+    model = SegResNet(
+        spatial_dims=2,
+        in_channels=3,
+        out_channels=1,
+        init_filters=config['init_filters'],
+        blocks_down=config['blocks_down'],
+        blocks_up=config['blocks_up'],
+        dropout_prob=config['dropout_prob'],
+    ).to(device)
+    
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    return model, device, best_dice
-
-# ============================================================
-# IMAGE PROCESSING
-# ============================================================
-def process_single_image(image_file):
-    """Process uploaded image"""
-    file_bytes = image_file.read()
-    file_extension = image_file.name.split('.')[-1].lower()
     
-    if file_extension in ['nii', 'gz']:
-        temp_dir = tempfile.gettempdir()
-        temp_path = os.path.join(temp_dir, 'temp_scan.nii.gz')
-        
-        with open(temp_path, 'wb') as f:
-            f.write(file_bytes)
-        
-        img = nib.load(temp_path)
-        volume = img.get_fdata()
-        
+    return model, checkpoint, device
+
+# Auto-load model on startup
+@st.cache_resource
+def autoload_model():
+    """Automatically load model if it exists"""
+    if os.path.exists(MODEL_PATH):
         try:
-            os.remove(temp_path)
-        except:
-            pass
-        
-        if volume.ndim == 3:
-            slice_img = volume[:, :, volume.shape[2]//2]
-        else:
-            slice_img = volume
-    else:
-        img = Image.open(io.BytesIO(file_bytes)).convert('L')
-        slice_img = np.array(img)
-    
-    slice_img = (slice_img - slice_img.min()) / (slice_img.max() - slice_img.min() + 1e-8)
-    slice_img = cv2.resize(slice_img, (240, 240))
-    
-    return slice_img
+            model, checkpoint, device = load_model(MODEL_PATH)
+            return model, checkpoint, device, True, None
+        except Exception as e:
+            return None, None, None, False, str(e)
+    return None, None, None, False, "Model file not found"
 
-def create_3d_volume(slice_2d, depth=96):
-    """Create 3D volume from 2D slice"""
-    volume = np.repeat(slice_2d[:, :, np.newaxis], depth, axis=2)
-    volume_4ch = np.stack([volume, volume*0.9, volume*1.1, volume*0.95], axis=0)
-    return volume_4ch
-
-def run_inference(model, device, slice_2d):
-    """Run SegResNet inference"""
-    volume = create_3d_volume(slice_2d, depth=96)
-    volume_tensor = torch.from_numpy(volume).unsqueeze(0).float().to(device)
+# Image preprocessing
+def preprocess_image(image, target_size=(512, 512)):
+    """Preprocess image for model input"""
+    # Resize
+    image = cv2.resize(image, target_size, interpolation=cv2.INTER_LINEAR)
     
+    # CLAHE enhancement on green channel
+    lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l = clahe.apply(l)
+    lab = cv2.merge([l, a, b])
+    image = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+    
+    # Normalize
+    image = image.astype(np.float32) / 255.0
+    
+    # Convert to tensor
+    image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
+    
+    return image_tensor, image
+
+# Prediction function
+def predict_vessels(model, image_tensor, device, threshold=0.5):
+    """Run inference on image"""
     with torch.no_grad():
-        output = sliding_window_inference(
-            volume_tensor,
-            roi_size=(96, 96, 96),
-            sw_batch_size=4,
-            predictor=model,
-            overlap=0.5
-        )
+        image_tensor = image_tensor.to(device)
+        output = model(image_tensor)
+        prediction = torch.sigmoid(output[0, 0]).cpu().numpy()
     
-    prediction = torch.sigmoid(output[0, :, :, :, 48]).cpu().numpy()
-    return prediction
+    binary_prediction = (prediction > threshold).astype(np.uint8)
+    return prediction, binary_prediction
 
-# ============================================================
-# VISUALIZATION FUNCTIONS
-# ============================================================
-def create_main_visualization(original, prediction):
-    """Create main analysis visualization"""
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    fig.patch.set_facecolor('#0a0a0a')
+# Metrics computation
+def compute_metrics(prediction, binary_pred):
+    """Compute various metrics from prediction"""
+    vessel_percentage = (np.sum(binary_pred) / binary_pred.size) * 100
+    avg_confidence = np.mean(prediction[binary_pred == 1]) if np.any(binary_pred) else 0
     
-    # Original scan
-    axes[0, 0].imshow(original, cmap='gray')
-    axes[0, 0].set_title('📸 Original Scan', fontsize=16, fontweight='bold', color='#00ff88', pad=20)
-    axes[0, 0].axis('off')
+    return {
+        'vessel_percentage': vessel_percentage,
+        'avg_confidence': avg_confidence,
+        'total_pixels': binary_pred.size,
+        'vessel_pixels': np.sum(binary_pred)
+    }
+
+# Visualization functions
+def create_overlay(original, prediction, binary_pred, alpha=0.5):
+    """Create overlay visualization"""
+    overlay = original.copy()
     
-    # Full overlay
-    axes[0, 1].imshow(original, cmap='gray')
-    overlay = np.zeros((*original.shape, 3))
-    overlay[prediction[0] > 0.5, 0] = 1
-    overlay[prediction[1] > 0.5, 1] = 1
-    overlay[prediction[2] > 0.5, 2] = 1
-    axes[0, 1].imshow(overlay, alpha=0.6)
-    axes[0, 1].set_title('🎯 Tumor Detection', fontsize=16, fontweight='bold', color='#00ff88', pad=20)
-    axes[0, 1].axis('off')
+    # Green for vessels
+    vessel_mask = np.zeros_like(original)
+    vessel_mask[:, :, 1] = binary_pred * 255
     
-    # Confidence map
-    combined = np.max(prediction, axis=0)
-    im = axes[0, 2].imshow(combined, cmap='hot', vmin=0, vmax=1)
-    axes[0, 2].set_title('🔥 Confidence Map', fontsize=16, fontweight='bold', color='#00ff88', pad=20)
-    axes[0, 2].axis('off')
-    cbar = plt.colorbar(im, ax=axes[0, 2], fraction=0.046)
-    cbar.ax.tick_params(colors='white', labelsize=10)
+    overlay = cv2.addWeighted(overlay, 1-alpha, vessel_mask, alpha, 0)
+    return overlay
+
+def create_heatmap(prediction):
+    """Create heatmap visualization"""
+    fig, ax = plt.subplots(figsize=(10, 10))
+    im = ax.imshow(prediction, cmap='hot', vmin=0, vmax=1)
+    ax.axis('off')
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    plt.tight_layout()
+    return fig
+
+def create_comparison_plot(original, mask, overlay):
+    """Create side-by-side comparison"""
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     
-    # Individual components
-    components = [
-        ('🔴 Necrotic Core', 'Reds', 0),
-        ('🟢 Edema', 'Greens', 1),
-        ('🔵 Enhancing Tumor', 'Blues', 2)
-    ]
+    axes[0].imshow(original)
+    axes[0].set_title('Original Image', fontsize=14, fontweight='bold')
+    axes[0].axis('off')
     
-    for idx, (title, cmap, i) in enumerate(components):
-        axes[1, idx].imshow(original, cmap='gray', alpha=0.8)
-        axes[1, idx].imshow(prediction[i], cmap=cmap, alpha=0.6, vmin=0, vmax=1)
-        axes[1, idx].set_title(title, fontsize=14, fontweight='bold', color='#00ff88', pad=15)
-        axes[1, idx].axis('off')
-        
-        # Add contours
-        if np.max(prediction[i]) > 0.5:
-            contours = cv2.findContours((prediction[i] > 0.5).astype(np.uint8), 
-                                       cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-            for contour in contours:
-                contour = contour.squeeze()
-                if len(contour) > 10:
-                    axes[1, idx].plot(contour[:, 0], contour[:, 1], 
-                                     color='yellow', linewidth=2, alpha=0.8)
+    axes[1].imshow(mask, cmap='gray')
+    axes[1].set_title('Detected Vessels', fontsize=14, fontweight='bold')
+    axes[1].axis('off')
+    
+    axes[2].imshow(overlay)
+    axes[2].set_title('Overlay', fontsize=14, fontweight='bold')
+    axes[2].axis('off')
     
     plt.tight_layout()
     return fig
 
-def create_3d_visualization(prediction):
-    """Create interactive 3D plot"""
-    # Downsample for performance
-    pred_down = prediction[:, ::2, ::2]
-    
-    fig = go.Figure()
-    
-    colors = ['red', 'green', 'blue']
-    names = ['Necrotic Core', 'Edema', 'Enhancing Tumor']
-    
-    for idx, (color, name) in enumerate(zip(colors, names)):
-        mask = pred_down[idx] > 0.5
-        if mask.sum() > 0:
-            x, y = np.where(mask)
-            fig.add_trace(go.Scatter(
-                x=x, y=y,
-                mode='markers',
-                marker=dict(size=3, color=color, opacity=0.6),
-                name=name,
-                hovertemplate=f'{name}<br>X: %{{x}}<br>Y: %{{y}}<extra></extra>'
-            ))
-    
-    fig.update_layout(
-        title=dict(text="🎨 Tumor Distribution Map", 
-                  font=dict(size=20, color='#00ff88', family='Courier New')),
-        paper_bgcolor='#0a0a0a',
-        plot_bgcolor='#161b22',
-        xaxis=dict(gridcolor='#30363d', color='#c9d1d9'),
-        yaxis=dict(gridcolor='#30363d', color='#c9d1d9'),
-        height=500,
-        showlegend=True,
-        legend=dict(bgcolor='#161b22', font=dict(color='#c9d1d9'))
-    )
-    
-    return fig
-
-def create_metrics_gauge(value, title, color):
-    """Create gauge chart for metrics"""
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=value,
-        title={'text': title, 'font': {'size': 20, 'color': '#c9d1d9'}},
-        gauge={
-            'axis': {'range': [0, 100], 'tickcolor': '#c9d1d9'},
-            'bar': {'color': color},
-            'bgcolor': '#161b22',
-            'borderwidth': 2,
-            'bordercolor': '#30363d',
-            'steps': [
-                {'range': [0, 50], 'color': '#0d1117'},
-                {'range': [50, 75], 'color': '#161b22'},
-                {'range': [75, 100], 'color': '#1a1f26'}
-            ],
-        }
-    ))
-    
-    fig.update_layout(
-        paper_bgcolor='#0a0a0a',
-        height=250,
-        margin=dict(l=20, r=20, t=50, b=20)
-    )
-    
-    return fig
-
-def generate_pdf_report(original, prediction, metrics):
-    """Generate detailed PDF-style report"""
-    fig = plt.figure(figsize=(11, 15))
-    fig.patch.set_facecolor('white')
-    
-    # Header
-    plt.figtext(0.5, 0.95, 'BRAIN TUMOR ANALYSIS REPORT', 
-                ha='center', fontsize=24, fontweight='bold', color='#0a0a0a')
-    plt.figtext(0.5, 0.92, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
-                ha='center', fontsize=12, color='#666')
-    
-    # Patient info section
-    plt.figtext(0.1, 0.88, 'SCAN INFORMATION', fontsize=16, fontweight='bold', color='#0a0a0a')
-    info_text = f"""
-    Model: SegResNet Advanced AI
-    Analysis Type: Multi-class Tumor Segmentation
-    Image Resolution: {original.shape[0]}x{original.shape[1]}
-    Processing Time: < 5 seconds
-    """
-    plt.figtext(0.1, 0.82, info_text, fontsize=11, family='monospace', color='#333')
-    
-    # Main visualization
-    ax1 = plt.subplot(4, 2, 3)
-    ax1.imshow(original, cmap='gray')
-    ax1.set_title('Original Scan', fontweight='bold')
-    ax1.axis('off')
-    
-    ax2 = plt.subplot(4, 2, 4)
-    ax2.imshow(original, cmap='gray')
-    overlay = np.zeros((*original.shape, 3))
-    overlay[prediction[0] > 0.5, 0] = 1
-    overlay[prediction[1] > 0.5, 1] = 1
-    overlay[prediction[2] > 0.5, 2] = 1
-    ax2.imshow(overlay, alpha=0.5)
-    ax2.set_title('AI Detection', fontweight='bold')
-    ax2.axis('off')
-    
-    # Individual components
-    for i, (title, cmap) in enumerate([('Necrotic Core', 'Reds'), 
-                                        ('Edema', 'Greens'), 
-                                        ('Enhancing', 'Blues')]):
-        ax = plt.subplot(4, 3, 7+i)
-        ax.imshow(original, cmap='gray', alpha=0.7)
-        ax.imshow(prediction[i], cmap=cmap, alpha=0.5)
-        ax.set_title(title, fontsize=10, fontweight='bold')
-        ax.axis('off')
-    
-    # Findings section
-    plt.figtext(0.1, 0.35, 'FINDINGS', fontsize=16, fontweight='bold', color='#0a0a0a')
-    
-    findings_text = f"""
-    STATUS: {'⚠️ TUMOR DETECTED' if metrics['total'] > 100 else '✓ CLEAR'}
-    
-    Quantitative Analysis:
-    • Necrotic Core:     {metrics['ncr']:,} pixels  ({metrics['ncr_pct']:.1f}%)
-    • Edema Region:      {metrics['edema']:,} pixels  ({metrics['edema_pct']:.1f}%)
-    • Enhancing Tumor:   {metrics['et']:,} pixels  ({metrics['et_pct']:.1f}%)
-    • Total Tumor:       {metrics['total']:,} pixels
-    
-    Risk Assessment: {metrics['risk_level']}
-    Confidence Score: {metrics['confidence']:.1f}%
-    """
-    
-    plt.figtext(0.1, 0.15, findings_text, fontsize=11, family='monospace', 
-                color='#333', bbox=dict(boxstyle='round', facecolor='#f0f0f0', alpha=0.8))
-    
-    # Disclaimer
-    plt.figtext(0.5, 0.02, 
-                'DISCLAIMER: This AI analysis is for screening purposes only. Consult a medical professional for diagnosis.',
-                ha='center', fontsize=9, style='italic', color='#666')
-    
-    plt.tight_layout(rect=[0, 0.05, 1, 0.9])
-    
-    return fig
+# ============================================================
+# AUTO-LOAD MODEL ON STARTUP
+# ============================================================
+if not st.session_state.model_loaded:
+    with st.spinner("🔄 Loading model..."):
+        model, checkpoint, device, success, error = autoload_model()
+        if success:
+            st.session_state.model = model
+            st.session_state.checkpoint = checkpoint
+            st.session_state.device = device
+            st.session_state.model_loaded = True
+        else:
+            st.session_state.model_load_error = error
 
 # ============================================================
 # MAIN APP
 # ============================================================
-def main():
-    # Animated header
+
+# Header with animation
+st.markdown('<h1 class="main-header">🔬 Retinal Vessel Segmentation</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">AI-Powered Medical Image Analysis | SegResNet Deep Learning</p>', unsafe_allow_html=True)
+
+# Model status banner
+if st.session_state.model_loaded:
     st.markdown("""
-        <h1 style='text-align: center; font-size: 48px; margin-bottom: 10px;'>
-            🧠 SegResNet Pro
-        </h1>
-        <p style='text-align: center; font-size: 20px; color: #8b949e; margin-bottom: 30px;'>
-            Advanced AI Brain Tumor Detection System
-        </p>
+    <div class="success-box">
+        <span class="status-badge badge-success">✓ Model Loaded</span>
+        <strong>SegResNet is ready for analysis</strong>
+    </div>
     """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="warning-box">
+        <span class="status-badge badge-info">⚠ Model Not Found</span>
+        Please check model path: <code>E:\monai\retinal-model\best_segresnet_model.pth</code>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Sidebar
+with st.sidebar:
+    st.markdown("### ⚙️ Control Panel")
+    st.markdown("---")
     
-    st.markdown("<hr>", unsafe_allow_html=True)
+    # Model status in sidebar
+    if st.session_state.model_loaded:
+        st.success("✅ Model Active")
+        with st.expander("📊 Model Details"):
+            st.write(f"**Architecture:** SegResNet")
+            st.write(f"**Dice Score:** {st.session_state.checkpoint['best_dice']:.4f}")
+            st.write(f"**Epochs Trained:** {st.session_state.checkpoint['epoch']}")
+            st.write(f"**Parameters:** {sum(p.numel() for p in st.session_state.model.parameters()):,}")
+            st.write(f"**Device:** {st.session_state.device}")
+    else:
+        st.error("❌ Model Not Loaded")
+        if st.button("🔄 Retry Loading Model"):
+            st.cache_resource.clear()
+            st.rerun()
     
-    # Sidebar
-    with st.sidebar:
-        st.markdown("### 🎛️ SYSTEM STATUS")
-        
-        model, device, best_dice = load_segresnet()
-        
-        if model is None:
-            st.error("❌ Model Load Failed")
-            return
-        
-        st.success(f"✅ Model: SegResNet")
-        st.info(f"🖥️ Device: {device}")
-        
-        if best_dice:
-            st.metric("Model Accuracy", f"{best_dice*100:.1f}%", 
-                     delta="Excellent", delta_color="normal")
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
-        st.markdown("### 📋 DETECTION GUIDE")
+    st.markdown("---")
+    
+    # Segmentation controls
+    st.markdown("### 🎛️ Segmentation Settings")
+    
+    threshold = st.slider(
+        "Detection Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.5,
+        step=0.05,
+        help="Higher = More strict vessel detection"
+    )
+    
+    overlay_alpha = st.slider(
+        "Overlay Opacity",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.5,
+        step=0.1,
+        help="Transparency of vessel overlay"
+    )
+    
+    st.markdown("---")
+    
+    # Visualization options
+    st.markdown("### 🎨 Visualization")
+    
+    colormap = st.selectbox(
+        "Heatmap Style",
+        ['hot', 'jet', 'viridis', 'plasma', 'inferno', 'magma'],
+        index=0
+    )
+    
+    show_grid = st.checkbox("Grid Analysis", value=False)
+    
+    if show_grid:
+        grid_size = st.slider("Grid Size", 2, 8, 4)
+    
+    st.markdown("---")
+    
+    # Info section
+    with st.expander("ℹ️ About This App"):
         st.markdown("""
-        <div style='background: #161b22; padding: 15px; border-radius: 10px; border-left: 4px solid #00ff88;'>
-        <b>Color Code:</b><br>
-        🔴 Necrotic Core - Dead tissue<br>
-        🟢 Edema - Swelling<br>
-        🔵 Enhancing - Active tumor<br>
-        </div>
-        """, unsafe_allow_html=True)
+        **Retinal Vessel Segmentation**
         
-        st.markdown("<hr>", unsafe_allow_html=True)
+        Advanced deep learning for automated blood vessel detection in fundus images.
         
-        st.markdown("### ⚡ FEATURES")
-        st.markdown("""
-        ✓ Real-time AI analysis<br>
-        ✓ 3D visualization<br>
-        ✓ Detailed PDF report<br>
-        ✓ Multi-format support<br>
-        ✓ Confidence scoring
-        """, unsafe_allow_html=True)
+        **Features:**
+        - ✨ Real-time segmentation
+        - 📊 Detailed metrics
+        - 🎨 Multiple visualizations
+        - 💾 Export results
+        
+        **Technology:**
+        - Model: SegResNet
+        - Dataset: DRIVE
+        - Framework: MONAI + PyTorch
+        """)
+
+# Main content
+col1, col2 = st.columns([1, 1], gap="large")
+
+with col1:
+    st.markdown('<div class="section-header">📤 Upload Image</div>', unsafe_allow_html=True)
     
-    # Main content
-    col1, col2 = st.columns([1.5, 1])
+    uploaded_file = st.file_uploader(
+        "Choose a retinal fundus image",
+        type=['jpg', 'jpeg', 'png', 'tif', 'tiff'],
+        help="Supported formats: JPG, PNG, TIF"
+    )
     
-    with col1:
-        st.markdown("### 📤 UPLOAD BRAIN SCAN")
+    if uploaded_file is not None:
+        # Load image
+        image = Image.open(uploaded_file).convert('RGB')
+        image_np = np.array(image)
+        st.session_state.uploaded_image = image_np
         
-        uploaded_file = st.file_uploader(
-            "Drop your scan here or click to browse",
-            type=['png', 'jpg', 'jpeg', 'nii', 'gz'],
-            help="Supported: PNG, JPG, NIfTI (.nii, .nii.gz)"
-        )
+        # Display with container
+        st.markdown('<div class="image-container">', unsafe_allow_html=True)
+        st.image(image, caption='📷 Uploaded Image', use_column_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        if uploaded_file:
-            st.success(f"✅ File loaded: **{uploaded_file.name}**")
-            
-            analyze_btn = st.button("🚀 START ANALYSIS", use_container_width=True)
-            
-            if analyze_btn:
-                with st.spinner("🔬 AI is analyzing your scan..."):
-                    try:
-                        # Process
-                        slice_img = process_single_image(uploaded_file)
-                        prediction = run_inference(model, device, slice_img)
-                        
-                        # Compute metrics
-                        ncr = np.sum(prediction[0] > 0.5)
-                        edema = np.sum(prediction[1] > 0.5)
-                        et = np.sum(prediction[2] > 0.5)
-                        total = ncr + edema + et
-                        
-                        total_pixels = slice_img.shape[0] * slice_img.shape[1]
-                        
-                        metrics = {
-                            'ncr': int(ncr),
-                            'edema': int(edema),
-                            'et': int(et),
-                            'total': int(total),
-                            'ncr_pct': (ncr/total_pixels)*100 if total_pixels > 0 else 0,
-                            'edema_pct': (edema/total_pixels)*100 if total_pixels > 0 else 0,
-                            'et_pct': (et/total_pixels)*100 if total_pixels > 0 else 0,
-                            'confidence': np.mean(np.max(prediction, axis=0)) * 100,
-                            'risk_level': 'HIGH RISK' if total > 5000 else 'MEDIUM RISK' if total > 2000 else 'LOW RISK'
-                        }
-                        
-                        st.success("✅ Analysis Complete!")
-                        
-                        # Results
-                        st.markdown("<hr>", unsafe_allow_html=True)
-                        st.markdown("## 📊 ANALYSIS RESULTS")
-                        
-                        # Metrics row
-                        m1, m2, m3, m4 = st.columns(4)
-                        
-                        with m1:
-                            status = "🚨 DETECTED" if total > 100 else "✅ CLEAR"
-                            st.metric("Status", status)
-                        
-                        with m2:
-                            st.metric("Necrotic Core", f"{ncr:,}", delta=f"{metrics['ncr_pct']:.1f}%")
-                        
-                        with m3:
-                            st.metric("Edema", f"{edema:,}", delta=f"{metrics['edema_pct']:.1f}%")
-                        
-                        with m4:
-                            st.metric("Enhancing", f"{et:,}", delta=f"{metrics['et_pct']:.1f}%")
-                        
-                        # Main visualization
-                        st.markdown("### 🎨 VISUAL ANALYSIS")
-                        fig_main = create_main_visualization(slice_img, prediction)
-                        st.pyplot(fig_main)
-                        
-                        # 3D Plot
-                        st.markdown("### 📍 TUMOR DISTRIBUTION")
-                        fig_3d = create_3d_visualization(prediction)
-                        st.plotly_chart(fig_3d, use_container_width=True)
-                        
-                        # Gauge charts
-                        st.markdown("### 📈 DETAILED METRICS")
-                        g1, g2, g3 = st.columns(3)
-                        
-                        with g1:
-                            st.plotly_chart(create_metrics_gauge(metrics['ncr_pct'], "NCR Coverage", "#ff4444"), 
-                                          use_container_width=True)
-                        with g2:
-                            st.plotly_chart(create_metrics_gauge(metrics['edema_pct'], "Edema Coverage", "#44ff44"), 
-                                          use_container_width=True)
-                        with g3:
-                            st.plotly_chart(create_metrics_gauge(metrics['et_pct'], "ET Coverage", "#4444ff"), 
-                                          use_container_width=True)
-                        
-                        # Risk Assessment
-                        st.markdown("### ⚕️ AI ASSESSMENT")
-                        risk_color = "#ff4444" if total > 5000 else "#ff9944" if total > 2000 else "#44ff44"
-                        st.markdown(f"""
-                        <div style='background: {risk_color}22; padding: 20px; border-radius: 10px; border-left: 4px solid {risk_color};'>
-                        <h3 style='color: {risk_color}; margin: 0;'>{metrics['risk_level']}</h3>
-                        <p style='font-size: 16px; margin-top: 10px;'>
-                        <b>Confidence Score:</b> {metrics['confidence']:.1f}%<br>
-                        <b>Total Affected Area:</b> {total:,} pixels<br>
-                        <b>Recommendation:</b> {'Immediate medical consultation recommended' if total > 5000 else 'Medical follow-up advised' if total > 2000 else 'Continue monitoring'}
-                        </p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Download section
-                        st.markdown("<hr>", unsafe_allow_html=True)
-                        st.markdown("### 💾 DOWNLOAD REPORTS")
-                        
-                        col_d1, col_d2 = st.columns(2)
-                        
-                        with col_d1:
-                            # Download visualization
-                            buf1 = io.BytesIO()
-                            fig_main.savefig(buf1, format='png', dpi=150, bbox_inches='tight', facecolor='#0a0a0a')
-                            st.download_button(
-                                label="📥 Download Analysis (PNG)",
-                                data=buf1.getvalue(),
-                                file_name=f"tumor_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                                mime="image/png",
-                                use_container_width=True
-                            )
-                        
-                        with col_d2:
-                            # Download PDF report
-                            fig_report = generate_pdf_report(slice_img, prediction, metrics)
-                            buf2 = io.BytesIO()
-                            fig_report.savefig(buf2, format='png', dpi=150, bbox_inches='tight')
-                            st.download_button(
-                                label="📄 Download Full Report",
-                                data=buf2.getvalue(),
-                                file_name=f"medical_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                                mime="image/png",
-                                use_container_width=True
-                            )
-                        
-                    except Exception as e:
-                        st.error(f"❌ Analysis failed: {str(e)}")
-                        st.exception(e)
-    
-    with col2:
-        st.markdown("### ℹ️ ABOUT")
-        st.markdown("""
-        <div style='background: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d;'>
-        <h4 style='color: #00ff88; margin-top: 0;'>🤖 AI Technology</h4>
-        <p>Powered by <b>SegResNet</b>, a state-of-the-art deep learning architecture specifically designed for medical image segmentation.</p>
-        
-        <h4 style='color: #00ff88;'>🎯 Capabilities</h4>
-        <ul style='color: #c9d1d9;'>
-        <li>Multi-class tumor detection</li>
-        <li>Real-time analysis (< 5 sec)</li>
-        <li>High accuracy (>70% Dice score)</li>
-        <li>3D visualization support</li>
-        </ul>
-        
-        <h4 style='color: #00ff88;'>📊 How It Works</h4>
-        <p>1. Upload brain scan image<br>
-        2. AI processes with SegResNet<br>
-        3. Get instant tumor detection<br>
-        4. Download detailed reports</p>
-        
-        <h4 style='color: #00ff88;'>⚠️ Disclaimer</h4>
-        <p style='font-size: 12px; color: #8b949e;'>This is an AI screening tool for educational purposes. Always consult qualified medical professionals for diagnosis and treatment decisions.</p>
+        # Image info
+        st.markdown(f"""
+        <div class="info-box">
+            📏 <strong>Dimensions:</strong> {image_np.shape[1]} × {image_np.shape[0]} pixels<br>
+            🎨 <strong>Channels:</strong> {image_np.shape[2]}<br>
+            💾 <strong>Size:</strong> {uploaded_file.size / 1024:.1f} KB
         </div>
         """, unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main()
+with col2:
+    st.markdown('<div class="section-header">🎯 Analysis Results</div>', unsafe_allow_html=True)
+    
+    if st.session_state.uploaded_image is not None and st.session_state.model is not None:
+        
+        if st.button("🚀 RUN SEGMENTATION", type="primary", use_container_width=True):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("⚙️ Preprocessing image...")
+            progress_bar.progress(25)
+            
+            # Preprocess
+            image_tensor, processed_img = preprocess_image(
+                st.session_state.uploaded_image,
+                target_size=(512, 512)
+            )
+            
+            status_text.text("🧠 Running AI model...")
+            progress_bar.progress(50)
+            
+            # Predict
+            prediction, binary_pred = predict_vessels(
+                st.session_state.model,
+                image_tensor,
+                st.session_state.device,
+                threshold=threshold
+            )
+            
+            status_text.text("📊 Computing metrics...")
+            progress_bar.progress(75)
+            
+            st.session_state.prediction = prediction
+            st.session_state.binary_pred = binary_pred
+            st.session_state.processed_img = (processed_img * 255).astype(np.uint8)
+            
+            # Compute metrics
+            metrics = compute_metrics(prediction, binary_pred)
+            st.session_state.metrics = metrics
+            
+            progress_bar.progress(100)
+            status_text.text("✅ Analysis complete!")
+            
+            # Clear progress indicators
+            import time
+            time.sleep(0.5)
+            progress_bar.empty()
+            status_text.empty()
+        
+        # Display results if available
+        if st.session_state.prediction is not None:
+            # Create visualizations
+            overlay = create_overlay(
+                st.session_state.processed_img,
+                st.session_state.prediction,
+                st.session_state.binary_pred,
+                alpha=overlay_alpha
+            )
+            
+            st.markdown('<div class="image-container">', unsafe_allow_html=True)
+            st.image(overlay, caption='🎨 Vessel Segmentation Result', use_column_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Metrics display
+            metrics = st.session_state.metrics
+            
+            st.markdown("### 📈 Key Metrics")
+            col_m1, col_m2, col_m3 = st.columns(3)
+            
+            with col_m1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>Vessel Coverage</h3>
+                    <h1>{metrics['vessel_percentage']:.2f}%</h1>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_m2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>Confidence</h3>
+                    <h1>{metrics['avg_confidence']:.3f}</h1>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_m3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>Vessel Pixels</h3>
+                    <h1>{metrics['vessel_pixels']:,}</h1>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    elif st.session_state.model is None:
+        st.warning("⚠️ Model not loaded. Please check the model path.")
+    elif st.session_state.uploaded_image is None:
+        st.info("👆 Upload a retinal image to start analysis")
+
+# Advanced Visualizations
+if st.session_state.prediction is not None:
+    st.markdown("---")
+    st.markdown('<div class="section-header">📊 Advanced Analysis</div>', unsafe_allow_html=True)
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["🔥 Heatmap", "📈 Statistics", "🔬 Detailed View", "💾 Export"])
+    
+    with tab1:
+        st.markdown("**Confidence Heatmap** - Pixel-wise prediction confidence")
+        
+        # Interactive heatmap with plotly
+        fig = px.imshow(
+            st.session_state.prediction,
+            color_continuous_scale=colormap,
+            aspect='equal',
+            title='Vessel Detection Confidence Map'
+        )
+        fig.update_layout(height=600)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Matplotlib version
+        fig_mpl = create_heatmap(st.session_state.prediction)
+        st.pyplot(fig_mpl)
+    
+    with tab2:
+        col_s1, col_s2 = st.columns(2)
+        
+        with col_s1:
+            st.markdown("**Confidence Distribution**")
+            
+            vessel_conf = st.session_state.prediction[st.session_state.binary_pred == 1].flatten()
+            bg_conf = st.session_state.prediction[st.session_state.binary_pred == 0].flatten()
+            
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(x=vessel_conf, name='Vessel', opacity=0.7, 
+                                           marker_color='#ef4444'))
+            fig_hist.add_trace(go.Histogram(x=bg_conf, name='Background', opacity=0.7, 
+                                           marker_color='#3b82f6'))
+            fig_hist.update_layout(
+                barmode='overlay',
+                title='Prediction Confidence Distribution',
+                xaxis_title='Confidence',
+                yaxis_title='Frequency',
+                height=400
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+        
+        with col_s2:
+            st.markdown("**Statistics Summary**")
+            
+            stats_data = {
+                'Metric': [
+                    'Total Pixels',
+                    'Vessel Pixels',
+                    'Background Pixels',
+                    'Vessel Coverage',
+                    'Mean Confidence (Vessel)',
+                    'Mean Confidence (Background)',
+                    'Max Confidence',
+                    'Min Confidence'
+                ],
+                'Value': [
+                    f"{st.session_state.metrics['total_pixels']:,}",
+                    f"{st.session_state.metrics['vessel_pixels']:,}",
+                    f"{st.session_state.metrics['total_pixels'] - st.session_state.metrics['vessel_pixels']:,}",
+                    f"{st.session_state.metrics['vessel_percentage']:.2f}%",
+                    f"{np.mean(vessel_conf):.4f}",
+                    f"{np.mean(bg_conf):.4f}",
+                    f"{np.max(st.session_state.prediction):.4f}",
+                    f"{np.min(st.session_state.prediction):.4f}"
+                ]
+            }
+            
+            st.dataframe(stats_data, use_container_width=True, hide_index=True)
+    
+    with tab3:
+        st.markdown("**Detailed Comparison View**")
+        
+        # Side-by-side comparison
+        fig_comp = create_comparison_plot(
+            st.session_state.processed_img,
+            st.session_state.binary_pred * 255,
+            create_overlay(
+                st.session_state.processed_img,
+                st.session_state.prediction,
+                st.session_state.binary_pred,
+                alpha=overlay_alpha
+            )
+        )
+        st.pyplot(fig_comp)
+        
+        # Grid analysis
+        if show_grid:
+            st.markdown(f"**Grid Analysis** ({grid_size}×{grid_size})")
+            
+            h, w = st.session_state.binary_pred.shape
+            grid_h, grid_w = h // grid_size, w // grid_size
+            
+            grid_stats = []
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    cell = st.session_state.binary_pred[
+                        i*grid_h:(i+1)*grid_h,
+                        j*grid_w:(j+1)*grid_w
+                    ]
+                    vessel_pct = (np.sum(cell) / cell.size) * 100
+                    grid_stats.append(vessel_pct)
+            
+            grid_array = np.array(grid_stats).reshape(grid_size, grid_size)
+            
+            fig_grid = px.imshow(
+                grid_array,
+                labels=dict(x="Column", y="Row", color="Vessel %"),
+                x=[f"C{i+1}" for i in range(grid_size)],
+                y=[f"R{i+1}" for i in range(grid_size)],
+                color_continuous_scale='RdYlGn',
+                title=f'Vessel Density Grid Analysis ({grid_size}×{grid_size})'
+            )
+            fig_grid.update_traces(text=np.round(grid_array, 1), texttemplate="%{text}%")
+            st.plotly_chart(fig_grid, use_container_width=True)
+    
+    with tab4:
+        st.markdown("**Export Analysis Results**")
+        
+        col_e1, col_e2, col_e3 = st.columns(3)
+        
+        with col_e1:
+            mask_img = Image.fromarray((st.session_state.binary_pred * 255).astype(np.uint8))
+            buf = BytesIO()
+            mask_img.save(buf, format='PNG')
+            st.download_button(
+                label="💾 Binary Mask",
+                data=buf.getvalue(),
+                file_name="vessel_mask.png",
+                mime="image/png",
+                use_container_width=True
+            )
+        
+        with col_e2:
+            overlay_img = Image.fromarray(create_overlay(
+                st.session_state.processed_img,
+                st.session_state.prediction,
+                st.session_state.binary_pred,
+                alpha=overlay_alpha
+            ))
+            buf = BytesIO()
+            overlay_img.save(buf, format='PNG')
+            st.download_button(
+                label="💾 Overlay Image",
+                data=buf.getvalue(),
+                file_name="vessel_overlay.png",
+                mime="image/png",
+                use_container_width=True
+            )
+        
+        with col_e3:
+            metrics_json = json.dumps(st.session_state.metrics, indent=4)
+            st.download_button(
+                label="💾 Metrics JSON",
+                data=metrics_json,
+                file_name="vessel_metrics.json",
+                mime="application/json",
+                use_container_width=True
+            )
+        
+        # Full report
+        st.markdown("---")
+        if st.button("📄 Generate Full Report", use_container_width=True):
+            report = f"""
+# Retinal Vessel Segmentation Report
+
+## Image Information
+- **Filename:** {uploaded_file.name if uploaded_file else 'N/A'}
+- **Dimensions:** {st.session_state.processed_img.shape[1]} × {st.session_state.processed_img.shape[0]} pixels
+
+## Segmentation Parameters
+- **Threshold:** {threshold}
+- **Overlay Alpha:** {overlay_alpha}
+
+## Results
+- **Vessel Coverage:** {st.session_state.metrics['vessel_percentage']:.2f}%
+- **Total Vessel Pixels:** {st.session_state.metrics['vessel_pixels']:,}
+- **Average Confidence:** {st.session_state.metrics['avg_confidence']:.4f}
+
+## Model Information
+- **Architecture:** SegResNet
+- **Best Dice Score:** {st.session_state.checkpoint['best_dice']:.4f}
+- **Training Epochs:** {st.session_state.checkpoint['epoch']}
+
+## Statistical Analysis
+- **Max Confidence:** {np.max(st.session_state.prediction):.4f}
+- **Min Confidence:** {np.min(st.session_state.prediction):.4f}
+- **Mean Confidence (Vessels):** {np.mean(vessel_conf):.4f}
+- **Mean Confidence (Background):** {np.mean(bg_conf):.4f}
+
+---
+*Generated by Retinal Vessel Segmentation App*
+"""
+            st.download_button(
+                label="📥 Download Report (Markdown)",
+                data=report,
+                file_name="segmentation_report.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div class="footer">
+    <p><strong>Retinal Vessel Segmentation System</strong></p>
+    <p style="font-size: 1rem; margin: 1rem 0;">
+        <span style="color: #667eea;">●</span> Powered by SegResNet 
+        <span style="color: #667eea;">●</span> Built with Streamlit 
+        <span style="color: #667eea;">●</span> MONAI Framework
+    </p>
+    <p style="font-size: 0.9rem; color: #94a3b8;">⚕️ For research and educational purposes only</p>
+    <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 1rem;">
+        © 2024 Medical AI Lab | Deep Learning for Healthcare
+    </p>
+</div>
+""", unsafe_allow_html=True)
